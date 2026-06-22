@@ -1,5 +1,6 @@
 package com.example
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -54,6 +55,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge() // Отрисовка "от края до края"
+        
+        // Запрос разрешения на отправку уведомлений для Android 13+ во избежание блокировок уведомлений службы
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+        }
+
         setContent {
             MyApplicationTheme {
                 Scaffold(

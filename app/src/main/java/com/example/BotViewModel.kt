@@ -68,19 +68,17 @@ class BotViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Запускает фоновый процесс подключения бота к серверам Discord по веб-сокетам (Gateway API v10).
+     * Запускает фоновый процесс подключения бота к серверам Discord через Android Foreground Service.
      */
     fun startBot() {
-        viewModelScope.launch {
-            DiscordGatewayClient.start(context, _token.value)
-        }
+        BotService.startService(context, _token.value)
     }
 
     /**
-     * Останавливает сессию веб-сокета, отключает бота из сети Discord и переводит приложение в режим ожидания.
+     * Останавливает сессию веб-сокета через остановку фоновой службы.
      */
     fun stopBot() {
-        DiscordGatewayClient.stop()
+        BotService.stopService(context)
     }
 
     /**
