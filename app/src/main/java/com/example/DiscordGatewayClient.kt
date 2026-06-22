@@ -21,32 +21,46 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
+/**
+ * Варианты статуса подключения Discord-бота к Gateway API.
+ */
 enum class BotStatus {
-    STOPPED,
-    CONNECTING,
-    RUNNING,
-    ERROR
+    STOPPED,     // Бот остановлен и выключен
+    CONNECTING,  // Выполняется попытка подключения по WebSocket и авторизация
+    RUNNING,     // Бот успешно авторизован, подключен и готов обрабатывать команды
+    ERROR        // Сбой подключения или ошибка авторизации (например, неверный токен)
 }
 
+/**
+ * [DiscordGatewayClient] - полностью автономный веб-сокет клиент с прямой поддержкой Discord Gateway API v10.
+ * Подключается напрямую к серверам Discord, поддерживает сессию, отправляет пинг-фреймы (Heartbeats)
+ * и обрабатывает входящие события (интеракции слэш-команд), передавая их во встроенный Lua-интерпретатор.
+ */
 object DiscordGatewayClient {
     private const val TAG = "DiscordGatewayClient"
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
+    // Реактивный статус подключения для отрисовки статусного бара в UI
     private val _status = MutableStateFlow(BotStatus.STOPPED)
     val status = _status.asStateFlow()
 
     private var client: OkHttpClient? = null
     private var webSocket: WebSocket? = null
-    private var token: String = ""
-    private var applicationId: String = ""
+    
+    private var token: String = ""             // Активный токен авторизации Discord-бота
+    private var applicationId: String = ""     // ID приложения, извлекаемый из READY-события Discord
 
-    private var heartbeatJob: Job? = null
-    private var reconnectJob: Job? = null
+    // Фоновые Coroutines задачи для поддержки соединения
+    private var heartbeatJob: Job? = null      // Пинг-таймер для удержания связи
+    private var reconnectJob: Job? = null      // Задача автоподключения при обрыве сети
     private val scope = CoroutineScope(Dispatchers.Default + Job())
 
-    private var lastSequence: Int? = null
-    private var isIntentionalStop = false
+    private var lastSequence: Int? = null      // Последний порядковый номер события для Heartbeat
+    private var isIntentionalStop = false      // Флаг намеренной остановки бота пользователем
 
+    /**
+     * Запуск процесса подключения бота.
+     */
     fun start(context: Context, botToken: String) {
         if (_status.value != BotStatus.STOPPED && _status.value != BotStatus.ERROR) {
             LogManager.log(LogLevel.WARNING, "System", "Бот уже запущен или запускается.")
@@ -64,12 +78,15 @@ object DiscordGatewayClient {
         _status.value = BotStatus.CONNECTING
         LogManager.log(LogLevel.INFO, "System", "Инициализация Discord соединения...")
 
-        // Force load local commands first
+        // Инициализируем локальные скрипты перед подключением к Discord
         LuaCommandManager.initializeAndLoad(context)
 
         connectGateway(context)
     }
 
+    /**
+     * Намеренная остановка бота, очистка фоновых циклов и отправка закрывающего кадра в веб-сокет.
+     */
     fun stop() {
         if (_status.value == BotStatus.STOPPED) return
 
@@ -80,6 +97,9 @@ object DiscordGatewayClient {
         LogManager.log(LogLevel.INFO, "System", "Бот остановлен.")
     }
 
+    /**
+     * Освобождает ресурсы, останавливает пинги и закрывает веб-сокет.
+     */
     private fun cleanup() {
         heartbeatJob?.cancel()
         heartbeatJob = null
@@ -96,6 +116,9 @@ object DiscordGatewayClient {
         lastSequence = null
     }
 
+    /**
+     * Открывает новое WebSocket подключение к официальному шлюзу Discord Gateway v10.
+     */
     private fun connectGateway(context: Context) {
         cleanup()
 
@@ -110,6 +133,7 @@ object DiscordGatewayClient {
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                // Все входящие события от шины Discord перенаправляются в обработчик
                 handleGatewayMessage(context, text)
             }
 
@@ -137,6 +161,9 @@ object DiscordGatewayClient {
         })
     }
 
+    /**
+     * Плавная попытка переподключения к Gateway при случайном обрыве связи спустя паузу в 5 секунд.
+     */
     private fun attemptReconnect(context: Context) {
         if (isIntentionalStop) return
         reconnectJob?.cancel()
@@ -150,28 +177,35 @@ object DiscordGatewayClient {
         }
     }
 
+    /**
+     * Основной парсер пакетов протокола Gateway Discord. Распознает код операции `op`.
+     * Подробную диаграмму состояний смотрите на https://discord.com/developers/docs/topics/gateway
+     */
     private fun handleGatewayMessage(context: Context, jsonStr: String) {
         try {
             val json = JSONObject(jsonStr)
             val op = json.getInt("op")
             
+            // Считываем порядковый номер транзакции для подтверждения доставки в Heartbeat
             if (json.has("s") && !json.isNull("s")) {
                 lastSequence = json.getInt("s")
             }
 
             when (op) {
-                10 -> { // Hello payload
+                10 -> { // Hello payload - отправляется сервером при успешном открытии веб-сокета.
                     val d = json.getJSONObject("d")
                     val heartbeatInterval = d.getLong("heartbeat_interval")
                     LogManager.log(LogLevel.DEBUG, "Gateway", "Получено Hello. Интервал таймера: ${heartbeatInterval}мс")
                     
+                    // Запуск таймера для периодических фонового пинга
                     startHeartbeat(heartbeatInterval)
+                    // Отправка пакета авторизации в Discord с токеном
                     sendIdentify()
                 }
-                11 -> { // Heartbeat ACK
+                11 -> { // Heartbeat ACK - сервер Discord успешно принял наш фоновый пинг.
                     LogManager.log(LogLevel.DEBUG, "Gateway", "Подтверждение пинга (Heartbeat ACK)")
                 }
-                0 -> { // Dispatch events (READY, INTERACTION_CREATE, etc.)
+                0 -> { // Dispatch events - сервер транслирует события (READY, INTERACTION_CREATE)
                     val t = json.getString("t")
                     val d = json.getJSONObject("d")
                     
@@ -180,15 +214,17 @@ object DiscordGatewayClient {
                             _status.value = BotStatus.RUNNING
                             val user = d.getJSONObject("user")
                             val username = user.getString("username")
+                            // Извлекаем Application ID для REST запросов регистрации команд
                             applicationId = d.getJSONObject("application").getString("id")
                             
                             LogManager.log(LogLevel.SUCCESS, "Bot", "Бот авторизован как: @$username")
                             LogManager.log(LogLevel.INFO, "Bot", "ID Приложения: $applicationId")
 
-                            // Auto-register slash commands
+                            // Автоматическая заливка/синхронизация локальных Lua слэш-команд в Discord API
                             registerSlashCommands(context)
                         }
                         "INTERACTION_CREATE" -> {
+                            // Событие вызова слэш-команды юзером в одном из каналов
                             handleInteraction(d)
                         }
                     }
@@ -203,6 +239,9 @@ object DiscordGatewayClient {
         }
     }
 
+    /**
+     * Создает бесконечный корутин-цикл для постоянной отправки Heartbeat пакетов.
+     */
     private fun startHeartbeat(intervalMs: Long) {
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
@@ -213,6 +252,9 @@ object DiscordGatewayClient {
         }
     }
 
+    /**
+     * Отправляет структуру Heartbeat во избежание закрытия веб-сокета сервером Discord по таймауту.
+     */
     private fun sendHeartbeat() {
         val json = JSONObject().apply {
             put("op", 1)
@@ -222,6 +264,10 @@ object DiscordGatewayClient {
         LogManager.log(LogLevel.DEBUG, "Gateway", "Отправлен фоновый пинг (Heartbeat)")
     }
 
+    /**
+     * Отправляет структуру IDENTIFY (код операции op = 2) с настройками авторизации,
+     * токеном и битовыми флагами (Intents / Намерения).
+     */
     private fun sendIdentify() {
         val properties = JSONObject().apply {
             put("os", "android")
@@ -233,7 +279,8 @@ object DiscordGatewayClient {
             put("token", token)
             put("properties", properties)
             put("compress", false)
-            put("intents", 513) // GUILDS (1) + GUILD_MESSAGES (512) for general integration
+            // Битовая маска: GUILDS (1) + GUILD_MESSAGES (512)
+            put("intents", 513) 
         }
         
         val json = JSONObject().apply {
@@ -246,7 +293,8 @@ object DiscordGatewayClient {
     }
 
     /**
-     * Bulk overwrite global application commands
+     * Отправляет HTTP PUT запрос для массовой перезаписи (Bulk Overwrite) глобальных команд бота.
+     * Загружает все локальные Lua-файлы, форматирует JSON для Discord REST API и заливает их.
      */
     fun registerSlashCommands(context: Context) {
         if (applicationId.isEmpty() || token.isEmpty()) {
@@ -294,18 +342,22 @@ object DiscordGatewayClient {
         }
     }
 
+    /**
+     * Извлекает имя юзера, ID, опции и тип вызываемой команды из интеракции "INTERACTION_CREATE".
+     * Затем передает на исполнение в Lua-движок и возвращает ответ обратно в Discord.
+     */
     private fun handleInteraction(interaction: JSONObject) {
         try {
             val id = interaction.getString("id")
             val token = interaction.getString("token")
             val type = interaction.getInt("type")
 
-            if (type != 2) return // Only handle APPLICATION_COMMAND (slash commands)
+            if (type != 2) return // Обрабатываем только APPLICATION_COMMAND слэш-интеракции
 
             val data = interaction.getJSONObject("data")
             val commandName = data.getString("name").lowercase().trim()
 
-            // Resolve triggering user
+            // Парсим объект пользователя (member для публичных серверов, либо user для личных переписок)
             var username = "unknown"
             var userId = "0"
             if (interaction.has("member")) {
@@ -322,7 +374,7 @@ object DiscordGatewayClient {
             val guildId = if (interaction.has("guild_id")) interaction.getString("guild_id") else null
             val channelId = if (interaction.has("channel_id")) interaction.getString("channel_id") else null
 
-            // Parse option/argument values
+            // Маппим аргументы (options) переданные пользователем внутри Discord
             val optionsMap = mutableMapOf<String, Any>()
             if (data.has("options")) {
                 val optionsArr = data.getJSONArray("options")
@@ -335,7 +387,7 @@ object DiscordGatewayClient {
             }
 
             scope.launch {
-                // Execute command inside the Lua script interpreter
+                // Исполняем вызов во встроенном песочнице-ранее скомпилированном Lua коде
                 val result = LuaCommandManager.executeCommand(
                     commandName = commandName,
                     username = username,
@@ -345,7 +397,7 @@ object DiscordGatewayClient {
                     options = optionsMap
                 )
 
-                // Dispatch callback REST POST back to Discord
+                // Отправляем результат выполнения Lua команды обратно в Discord REST API (Interaction Callback)
                 sendInteractionResponse(id, token, result)
             }
 
@@ -354,14 +406,22 @@ object DiscordGatewayClient {
         }
     }
 
+    /**
+     * Вещает HTTP-ответ Interaction Callback обратно по HTTP протоколу в Discord.
+     * Отвечает типом 4 (CHANNEL_MESSAGE_WITH_SOURCE — моментальное текстовое сообщение).
+     */
     private fun sendInteractionResponse(interactionId: String, interactionToken: String, result: ExecutionResult) {
         scope.launch(Dispatchers.IO) {
             val url = "https://discord.com/api/v10/interactions/$interactionId/$interactionToken/callback"
 
-            val flags = if (result.ephemeral) 64 else 0 // 64 is EPHEMERAL flag
+            // Битовый флаг 64 преобразует сообщение в режим "ephemeral" (видно только инициатору)
+            val flags = if (result.ephemeral) 64 else 0 
 
             val dataContent = JSONObject().apply {
                 put("content", result.content)
+                if (result.embeds != null && result.embeds.length() > 0) {
+                    put("embeds", result.embeds)
+                }
                 if (flags != 0) {
                     put("flags", flags)
                 }

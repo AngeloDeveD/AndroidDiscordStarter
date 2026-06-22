@@ -4,10 +4,22 @@ import android.content.Context
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+import org.luaj.vm2.Globals
 import org.luaj.vm2.LuaValue
+import org.luaj.vm2.lib.OneArgFunction
+import org.luaj.vm2.lib.TwoArgFunction
 import org.luaj.vm2.lib.jse.JsePlatform
 import java.io.File
 
+/**
+ * Модель данных скомпилированной Lua-команды.
+ *
+ * @property name Имя команды в нижнем регистре (используется для `/имя_команбы` в Discord)
+ * @property description Описание команды, отображаемое внутри Discord интерфейса
+ * @property optionsArray JSON-список аргументов команды (опций), зарегистрированный в Discord API
+ * @property filePath Локальный абсолютный путь к файлу скрипта `.lua`
+ * @property fileContent Исходный код скрипта для динамической компиляции при исполнении
+ */
 data class LuaCommand(
     val name: String,
     val description: String,
@@ -16,17 +28,31 @@ data class LuaCommand(
     val fileContent: String
 )
 
+/**
+ * Объект-менеджер, инкапсулирующий всю бизнес-логику работы со сценариями Lua.
+ * Отвечает за:
+ * 1. Создание стандартных команд при первом запуске (ping, calc, coinflip, roll).
+ * 2. Парсинг структуры Lua-таблиц (глобальная таблица `command`).
+ * 3. Динамическое выполнение функции `execute(interaction)` в изолированной виртуальной JVM Lua-машине (Luaj).
+ * 4. Сохранение и удаление файлов `.lua`.
+ */
 object LuaCommandManager {
     private const val TAG = "LuaCommandManager"
-    private const val COMMANDS_DIR = "commands"
+    private const val COMMANDS_DIR = "commands" // Название поддиректории для хранения скриптов
 
+    private val httpClient = okhttp3.OkHttpClient()
+    private var statePrefs: android.content.SharedPreferences? = null
+
+    // Хеш-карта загруженных и прошедших валидацию команд, ключ - имя команды
     private val _commands = mutableMapOf<String, LuaCommand>()
     val commands: Map<String, LuaCommand> get() = _commands
 
     /**
-     * Initializes directory and populates default command files if they don't exist
+     * Инициализирует директорию на диске, генерирует дефолтные файлы скриптов (если папка пуста),
+     * считывает и компилирует все обнаруженные Lua-сценарии.
      */
     fun initializeAndLoad(context: Context): List<LuaCommand> {
+        statePrefs = context.getSharedPreferences("lua_scripts_state", Context.MODE_PRIVATE)
         val dir = getCommandsDir(context)
         LogManager.log(LogLevel.INFO, "System", "Загрузка Lua-команд из: ${dir.absolutePath}")
 
@@ -34,7 +60,7 @@ object LuaCommandManager {
             dir.mkdirs()
         }
 
-        // Create default command files if directory is empty
+        // Если в директории отсутствуют файлы скриптов, создаем дефолтные команды
         val files = dir.listFiles()
         if (files == null || files.isEmpty()) {
             createDefaultCommands(dir)
@@ -43,12 +69,16 @@ object LuaCommandManager {
         return loadAllCommands(context)
     }
 
+    /**
+     * Возвращает путь к директории хранения команд (внешнее хранилище или внутренняя папка данных приложения).
+     */
     fun getCommandsDir(context: Context): File {
         return context.getExternalFilesDir(COMMANDS_DIR) ?: File(context.filesDir, COMMANDS_DIR)
     }
 
     /**
-     * Loads/Refreshes all Lua commands from the files directory
+     * Считывает все файлы с расширением `.lua` из файловой директории,
+     * валидирует их синтаксис структуру и обновляет внутренний кэш команд.
      */
     fun loadAllCommands(context: Context): List<LuaCommand> {
         val dir = getCommandsDir(context)
@@ -75,14 +105,18 @@ object LuaCommandManager {
     }
 
     /**
-     * Parses name, description, and options from Lua content using Luaj globals
+     * Компилирует и парсит структуру скрипта Lua. Считывает глобальную таблицу `command`
+     * для извлечения метаданных (name, description, options, choices).
      */
     private fun parseLuaCommand(filePath: String, content: String): LuaCommand? {
         try {
+            // Создаем стандартную среду Lua
             val globals = JsePlatform.standardGlobals()
+            // Компилируем и запускаем скрипт, чтобы объявить глобальные переменные и функции
             val chunk = globals.load(content)
             chunk.call()
 
+            // Проверяем наличие таблицы "command"
             val commandTable = globals.get("command")
             if (!commandTable.istable()) {
                 val fileName = File(filePath).name
@@ -99,6 +133,7 @@ object LuaCommandManager {
                 return null
             }
 
+            // Парсим аргументы (options) из таблицы Lua в JSONArray для последующего запроса к Discord REST
             val optionsArray = JSONArray()
             val optionsVal = commandTable.get("options")
             if (optionsVal.istable()) {
@@ -112,6 +147,7 @@ object LuaCommandManager {
                         optionObj.put("type", optionVal.get("type").toint())
                         optionObj.put("required", optionVal.get("required").toboolean())
 
+                        // Парсим варианты выбора (choices) для аргументов, если они объявлены
                         val choicesVal = optionVal.get("choices")
                         if (choicesVal.istable()) {
                             val choicesArray = JSONArray()
@@ -122,6 +158,7 @@ object LuaCommandManager {
                                     val choiceObj = JSONObject()
                                     choiceObj.put("name", choiceVal.get("name").tojstring())
                                     val choiceValVal = choiceVal.get("value")
+                                    // Пытаемся сохранить оригинальный тип данных выбора
                                     if (choiceValVal.isint() || choiceValVal.islong()) {
                                         choiceObj.put("value", choiceValVal.tolong())
                                     } else if (choiceValVal.isnumber()) {
@@ -154,7 +191,15 @@ object LuaCommandManager {
     }
 
     /**
-     * Executes the Lua execute(interaction) function and returns interaction response data
+     * Вызывает на исполнение функцию `execute(interaction)` конкретного Lua-скрипта.
+     * Формирует объект `interaction` в виде таблицы Lua с данными об отправителе, сервере, канале и опциях.
+     *
+     * @param commandName Имя вызываемой команды
+     * @param username Никнейм автора слэш-интеракции из Discord
+     * @param userId ID пользователя Discord
+     * @param guildId ID Discord-сервера (гильдии), на котором произошел вызов
+     * @param channelId ID текстового канала
+     * @param options Входящие аргументы команды, переданные пользователем
      */
     fun executeCommand(
         commandName: String,
@@ -168,22 +213,26 @@ object LuaCommandManager {
             ?: return ExecutionResult("Команда не найдена.", false)
 
         try {
+            // Инициализация новой чистой среды исполнения скрипта во избежание пересечения состояний
             val globals = JsePlatform.standardGlobals()
+            registerGlobals(globals)
             val chunk = globals.load(command.fileContent)
             chunk.call()
 
+            // Ищем глобальную функцию execute
             val executeFunc = globals.get("execute")
             if (!executeFunc.isfunction()) {
                 return ExecutionResult("Функция 'execute' не определена в Lua-скрипте.", false)
             }
 
-            // Assemble 'interaction' argument as a Lua table
+            // Формируем таблицу 'interaction' для передачи аргументом в execute()
             val interactionTable = LuaValue.tableOf()
             interactionTable.set("user", LuaValue.valueOf(username))
             interactionTable.set("userId", LuaValue.valueOf(userId))
             interactionTable.set("guildId", LuaValue.valueOf(guildId ?: ""))
             interactionTable.set("channelId", LuaValue.valueOf(channelId ?: ""))
 
+            // Маппим аргументы во вложенную таблицу options
             val optionsTable = LuaValue.tableOf()
             for ((key, value) in options) {
                 val luaValue = when (value) {
@@ -198,15 +247,37 @@ object LuaCommandManager {
             }
             interactionTable.set("options", optionsTable)
 
-            // Invoke direct call
+            // Запускаем вызов и логируем результат работы
             LogManager.log(LogLevel.BOT, "LuaInterpreter", "Выполнение команды /$commandName пользователем $username")
             val luaResult = executeFunc.call(interactionTable)
 
+            // Обрабатываем тип возвращаемого значения из Lua
             if (luaResult.istable()) {
                 val content = luaResult.get("content").tojstring()
                 val ephemeral = luaResult.get("ephemeral").toboolean()
-                return ExecutionResult(content, ephemeral)
+                
+                var embedsArray: JSONArray? = null
+                val embedVal = luaResult.get("embed")
+                if (embedVal.istable()) {
+                    embedsArray = JSONArray()
+                    embedsArray.put(parseLuaTableToEmbedJson(embedVal.checktable()))
+                } else {
+                    val embedsVal = luaResult.get("embeds")
+                    if (embedsVal.istable()) {
+                        embedsArray = JSONArray()
+                        val tbl = embedsVal.checktable()
+                        val keys = tbl.keys()
+                        for (k in keys) {
+                            val singleEmbedVal = tbl.get(k)
+                            if (singleEmbedVal.istable()) {
+                                embedsArray.put(parseLuaTableToEmbedJson(singleEmbedVal.checktable()))
+                            }
+                        }
+                    }
+                }
+                return ExecutionResult(content, ephemeral, embedsArray)
             } else {
+                // Если Lua вернул обычную строку или примитив
                 return ExecutionResult(luaResult.tojstring(), false)
             }
         } catch (e: Exception) {
@@ -217,7 +288,7 @@ object LuaCommandManager {
     }
 
     /**
-     * Save or update an in-app edited command
+     * Создает или обновляет Lua-файл команды в директории приложения, после чего вызывает её перезагрузку.
      */
     fun saveCommand(context: Context, name: String, content: String): Boolean {
         try {
@@ -235,7 +306,7 @@ object LuaCommandManager {
     }
 
     /**
-     * Delete a command
+     * Удаляет Lua-файл с диска для удаления соответствующей слэш-команды.
      */
     fun deleteCommand(context: Context, command: LuaCommand): Boolean {
         try {
@@ -252,6 +323,9 @@ object LuaCommandManager {
         }
     }
 
+    /**
+     * Генерирует дефолтный набор функциональных команд во избежание пустого списка при первом запуске.
+     */
     private fun createDefaultCommands(dir: File) {
         // 1. ping.lua
         File(dir, "ping.lua").writeText("""
@@ -387,10 +461,337 @@ function execute(interaction)
     return "🎲 Результат броска: **" .. val .. "** (из " .. maxVal .. ")"
 end
         """.trimIndent())
+
+        // 5. crypto.lua
+        File(dir, "crypto.lua").writeText("""
+-- Получает текущий курс биткоина с CoinDesk API и показывает в Embed
+command = {
+    name = "crypto",
+    description = "Показывает текущий курс Bitcoin (embeds + http_get)",
+    options = {}
+}
+
+function execute(interaction)
+    local raw_data = http_get("https://api.coindesk.com/v1/bpi/currentprice.json")
+    if raw_data == nil or raw_data:find("Error") then
+        return "⚠️ Не удалось получить данные о курсе криптовалют."
+    end
+    
+    local data = json_parse(raw_data)
+    if data == nil or data.bpi == nil then
+        return "⚠️ Ошибка парсинга цены биткоина."
+    end
+    
+    local rate = data.bpi.USD.rate
+    local updated = data.time.updated
+    
+    local embed = {
+        title = "💰 Курс Bitcoin (BTC)",
+        description = "Текущая рыночная стоимость первой криптовалюты по версии CoinDesk.",
+        color = "#F7931A", -- Оранжевый цвет Bitcoin
+        fields = {
+            { name = "Стоимость (USD)", value = "$" .. rate, inline = true },
+            { name = "Обновлено", value = updated, inline = false }
+        },
+        footer = {
+            text = "Бот-лаунчер на Android",
+            icon_url = "https://w7.pngwing.com/pngs/336/275/png-transparent-bitcoin-cryptocurrency-logo-ethereum-litecoin-cardano-blockchain-physical-coin-thumbnail.png"
+        }
+    }
+    
+    return {
+        content = "Курс получен успешно!",
+        embed = embed,
+        ephemeral = false
+    }
+end
+        """.trimIndent())
+
+        // 6. stat.lua
+        File(dir, "stat.lua").writeText("""
+-- Личный счетчик использования команд пользователем
+command = {
+    name = "stat",
+    description = "Показывает ваш личный счетчик использования команд",
+    options = {}
+}
+
+function execute(interaction)
+    local key = "user_count_" .. interaction.userId
+    local val_str = store_get(key)
+    local count = 0
+    if val_str ~= "" then
+        count = tonumber(val_str)
+    end
+    count = count + 1
+    store_set(key, tostring(count))
+    
+    local embed = {
+        title = "📊 Личная статистика бота",
+        color = "#9d4edd",
+        description = "Привет, @" .. interaction.user .. "! Вы использовали этого бота на этом устройстве уже **" .. count .. "** раз(а).",
+        footer = { text = "Данные сохранены локально в памяти Android" }
+    }
+    
+    return {
+        content = "",
+        embed = embed,
+        ephemeral = false
+    }
+end
+        """.trimIndent())
+    }
+
+    private fun registerGlobals(globals: Globals) {
+        // http_get
+        globals.set("http_get", object : OneArgFunction() {
+            override fun call(arg: LuaValue): LuaValue {
+                val url = arg.tojstring()
+                return try {
+                    val request = okhttp3.Request.Builder().url(url)
+                        .header("User-Agent", "DiscordBot-Android-Launcher/1.0").build()
+                    httpClient.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            LuaValue.valueOf(response.body?.string() ?: "")
+                        } else {
+                            LuaValue.valueOf("Error: HTTP " + response.code)
+                        }
+                    }
+                } catch (e: Exception) {
+                    LuaValue.valueOf("Error: " + e.message)
+                }
+            }
+        })
+
+        // json_parse
+        globals.set("json_parse", object : OneArgFunction() {
+            override fun call(arg: LuaValue): LuaValue {
+                val str = arg.tojstring()
+                return try {
+                    if (str.trim().startsWith("[")) {
+                        jsonToLua(JSONArray(str))
+                    } else {
+                        jsonToLua(JSONObject(str))
+                    }
+                } catch (e: Exception) {
+                    LuaValue.valueOf("Error: " + e.message)
+                }
+            }
+        })
+
+        // json_stringify
+        globals.set("json_stringify", object : OneArgFunction() {
+            override fun call(arg: LuaValue): LuaValue {
+                return try {
+                    LuaValue.valueOf(luaToJson(arg).toString())
+                } catch (e: Exception) {
+                    LuaValue.valueOf("Error: " + e.message)
+                }
+            }
+        })
+
+        // store_set
+        globals.set("store_set", object : org.luaj.vm2.lib.TwoArgFunction() {
+            override fun call(arg1: LuaValue, arg2: LuaValue): LuaValue {
+                val key = arg1.tojstring()
+                val value = arg2.tojstring()
+                statePrefs?.edit()?.putString(key, value)?.apply()
+                return LuaValue.NIL
+            }
+        })
+
+        // store_get
+        globals.set("store_get", object : OneArgFunction() {
+            override fun call(arg: LuaValue): LuaValue {
+                val key = arg.tojstring()
+                val value = statePrefs?.getString(key, "") ?: ""
+                return LuaValue.valueOf(value)
+            }
+        })
+    }
+
+    private fun jsonToLua(json: Any?): LuaValue {
+        return when (json) {
+            null, JSONObject.NULL -> LuaValue.NIL
+            is JSONObject -> {
+                val table = LuaValue.tableOf()
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    table.set(key, jsonToLua(json.get(key)))
+                }
+                table
+            }
+            is JSONArray -> {
+                val table = LuaValue.tableOf()
+                for (i in 0 until json.length()) {
+                    table.set(i + 1, jsonToLua(json.get(i)))
+                }
+                table
+            }
+            is Boolean -> LuaValue.valueOf(json)
+            is Int -> LuaValue.valueOf(json)
+            is Long -> LuaValue.valueOf(json.toDouble())
+            is Double -> LuaValue.valueOf(json)
+            else -> LuaValue.valueOf(json.toString())
+        }
+    }
+
+    private fun luaToJson(lua: LuaValue): Any {
+        return when {
+            lua.isnil() -> JSONObject.NULL
+            lua.isboolean() -> lua.toboolean()
+            lua.isint() -> lua.toint()
+            lua.islong() -> lua.tolong()
+            lua.isnumber() -> lua.todouble()
+            lua.istable() -> {
+                val tableObj = lua.checktable()
+                val keys = tableObj.keys()
+                var isArray = true
+                var maxKey = 0
+                val allKeys = mutableListOf<LuaValue>()
+                for (k in keys) {
+                    allKeys.add(k)
+                    if (k.isint()) {
+                        if (k.toint() <= 0) {
+                            isArray = false
+                        } else if (k.toint() > maxKey) {
+                            maxKey = k.toint()
+                        }
+                    } else {
+                        isArray = false
+                    }
+                }
+                if (isArray && maxKey > 0 && maxKey == allKeys.size) {
+                    val array = JSONArray()
+                    for (i in 1..maxKey) {
+                        array.put(luaToJson(tableObj.get(i)))
+                    }
+                    array
+                } else {
+                    val obj = JSONObject()
+                    for (k in allKeys) {
+                        obj.put(k.tojstring(), luaToJson(tableObj.get(k)))
+                    }
+                    obj
+                }
+            }
+            else -> lua.tojstring()
+        }
+    }
+
+    private fun parseLuaTableToEmbedJson(table: org.luaj.vm2.LuaTable): JSONObject {
+        val embed = JSONObject()
+
+        val title = table.get("title")
+        if (!title.isnil()) embed.put("title", title.tojstring())
+
+        val description = table.get("description")
+        if (!description.isnil()) embed.put("description", description.tojstring())
+
+        val url = table.get("url")
+        if (!url.isnil()) embed.put("url", url.tojstring())
+
+        val color = table.get("color")
+        if (!color.isnil() && color.isint()) {
+            embed.put("color", color.toint())
+        } else if (!color.isnil()) {
+            val colorStr = color.tojstring()
+            if (colorStr.startsWith("#")) {
+                try {
+                    embed.put("color", colorStr.substring(1).toInt(16))
+                } catch (e: Exception) {}
+            }
+        }
+
+        val timestamp = table.get("timestamp")
+        if (!timestamp.isnil()) embed.put("timestamp", timestamp.tojstring())
+
+        // footer
+        val footer = table.get("footer")
+        if (footer.istable()) {
+            val footerObj = JSONObject()
+            val fText = footer.get("text")
+            val fIcon = footer.get("icon_url")
+            if (!fText.isnil()) footerObj.put("text", fText.tojstring())
+            if (!fIcon.isnil()) footerObj.put("icon_url", fIcon.tojstring())
+            embed.put("footer", footerObj)
+        }
+
+        // image
+        val image = table.get("image")
+        if (image.istable()) {
+            val imgObj = JSONObject()
+            val imgUrl = image.get("url")
+            if (!imgUrl.isnil()) imgObj.put("url", imgUrl.tojstring())
+            embed.put("image", imgObj)
+        } else if (image.isstring()) {
+            val imgObj = JSONObject()
+            imgObj.put("url", image.tojstring())
+            embed.put("image", imgObj)
+        }
+
+        // thumbnail
+        val thumbnail = table.get("thumbnail")
+        if (thumbnail.istable()) {
+            val thumbObj = JSONObject()
+            val thumbUrl = thumbnail.get("url")
+            if (!thumbUrl.isnil()) thumbObj.put("url", thumbUrl.tojstring())
+            embed.put("thumbnail", thumbObj)
+        } else if (thumbnail.isstring()) {
+            val thumbObj = JSONObject()
+            thumbObj.put("url", thumbnail.tojstring())
+            embed.put("thumbnail", thumbObj)
+        }
+
+        // author
+        val author = table.get("author")
+        if (author.istable()) {
+            val authObj = JSONObject()
+            val aName = author.get("name")
+            val aUrl = author.get("url")
+            val aIcon = author.get("icon_url")
+            if (!aName.isnil()) authObj.put("name", aName.tojstring())
+            if (!aUrl.isnil()) authObj.put("url", aUrl.tojstring())
+            if (!aIcon.isnil()) authObj.put("icon_url", aIcon.tojstring())
+            embed.put("author", authObj)
+        }
+
+        // fields
+        val fields = table.get("fields")
+        if (fields.istable()) {
+            val fieldsArr = JSONArray()
+            val tbl = fields.checktable()
+            val keys = tbl.keys()
+            for (k in keys) {
+                val fVal = tbl.get(k)
+                if (fVal.istable()) {
+                    val fieldObj = JSONObject()
+                    val fName = fVal.get("name")
+                    val fValue = fVal.get("value")
+                    val fInline = fVal.get("inline")
+                    if (!fName.isnil()) fieldObj.put("name", fName.tojstring())
+                    if (!fValue.isnil()) fieldObj.put("value", fValue.tojstring())
+                    if (!fInline.isnil()) fieldObj.put("inline", fInline.toboolean())
+                    fieldsArr.put(fieldObj)
+                }
+            }
+            embed.put("fields", fieldsArr)
+        }
+
+        return embed
     }
 }
 
+/**
+ * Итоговый результат выполнения слэш-интеракции.
+ *
+ * @property content Ответ в виде форматированного Markdown-текста, который бот отправит в чат Discord
+ * @property ephemeral Устанавливает видимость сообщения (true - видит только вызвавший слэш команду)
+ * @property embeds Список вложенных богатых карточек (Discord Embeds) в формате JSON
+ */
 data class ExecutionResult(
     val content: String,
-    val ephemeral: Boolean
+    val ephemeral: Boolean,
+    val embeds: JSONArray? = null
 )

@@ -23,7 +23,8 @@ private val DarkColorScheme =
     surface = Color(0xFF25232A),
     onBackground = Color(0xFFE6E1E5),
     onSurface = Color(0xFFE6E1E5),
-    outline = TerminalGrey
+    outline = TerminalGrey,
+    surfaceVariant = Color(0xFF33303A)
   )
 
 private val LightColorScheme =

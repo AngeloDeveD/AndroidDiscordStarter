@@ -8,6 +8,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -40,10 +41,19 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.theme.*
 
+/**
+ * [MainActivity] — главная точка входа в Android-приложение Discord Bot Launcher.
+ * Наследуется от [ComponentActivity].
+ * 
+ * В методе [onCreate] вызывается [enableEdgeToEdge] для активации отрисовки интерфейса под
+ * системными элементами управления (StatusBar, NavigationBar) для современного безрамочного отображения.
+ * С помощью Jetpack Compose верстается основной контейнер [Scaffold], передающий внутренние отступы [innerPadding]
+ * в корневой компонент [BotDashboardScreen].
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge() // Отрисовка "от края до края"
         setContent {
             MyApplicationTheme {
                 Scaffold(
@@ -60,18 +70,30 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * [BotDashboardScreen] — корневой экран панели управления ботом.
+ * Разделен на три логических вкладки (Tabs):
+ * 1. Консоль / Панель ("Бот") — управление сессией, токеном, просмотр терминала логов.
+ * 2. Команды Lua ("Команды") — список активных Lua скриптов, их создание, редактирование и удаление.
+ * 3. Руководство ("Справка") — иллюстрированные карточки с инструкцией по настройке бота и синтаксису Lua.
+ *
+ * @param modifier Дополнительные модификаторы разметки
+ * @param viewModel Логическая модель представления, предоставляемая Compose ViewModel Provider
+ */
 @Composable
 fun BotDashboardScreen(
     modifier: Modifier = Modifier,
     viewModel: BotViewModel = viewModel()
 ) {
+    // Индекс текущей выбранной вкладки в нижнем баре навигации
     var selectedTab by remember { mutableIntStateOf(0) }
+    // Реактивное наблюдение за статусом подключения бота через Kotlin StateFlow
     val currentStatus by viewModel.botStatus.collectAsState()
 
     Column(
         modifier = modifier.background(MaterialTheme.colorScheme.background)
     ) {
-        // High Density Header Section using AppDimens tokens
+        // Шапка приложения (Header Section) с высокой плотностью элементов
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -92,7 +114,7 @@ fun BotDashboardScreen(
                     color = MaterialTheme.colorScheme.onBackground,
                     letterSpacing = (-0.5).sp
                 )
-                // Inline status indicator with pulsing shadow-like appearance
+                // Индикатор состояния статуса бота (зеленый/оранжевый/красный) с мелкой надписью
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(AppDimens.smallSpacing + 2.dp),
@@ -122,7 +144,7 @@ fun BotDashboardScreen(
                 }
             }
 
-            // High Density Circle Settings/Help Button
+            // Круглая кнопка быстрого перехода к справке / настройкам
             IconButton(
                 onClick = { selectedTab = 2 },
                 modifier = Modifier
@@ -140,7 +162,7 @@ fun BotDashboardScreen(
 
         Spacer(modifier = Modifier.height(AppDimens.mediumSpacing))
 
-        // Main Tab Content Area
+        // Основная область контента со вкладками
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -148,13 +170,13 @@ fun BotDashboardScreen(
                 .padding(horizontal = AppDimens.screenPadding)
         ) {
             when (selectedTab) {
-                0 -> ConsoleTab(viewModel = viewModel)
-                1 -> CommandsTab(viewModel = viewModel)
-                2 -> GuideTab()
+                0 -> ConsoleTab(viewModel = viewModel) // Вкладка консоли
+                1 -> CommandsTab(viewModel = viewModel) // Вкладка Lua-команд
+                2 -> GuideTab() // Вкладка инструкций
             }
         }
 
-        // High Density Bottom Navigation Bar
+        // Нижняя панель навигации (NavigationBar) со скругленными верхними углами
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(topStart = AppDimens.highDensityCorner, topEnd = AppDimens.highDensityCorner),
@@ -171,6 +193,7 @@ fun BotDashboardScreen(
                     Triple("Команды", Icons.Default.List, 1),
                     Triple("Справка", Icons.Default.Info, 2)
                 )
+                val darkTheme = isSystemInDarkTheme()
                 items.forEach { (title, icon, index) ->
                     NavigationBarItem(
                         selected = selectedTab == index,
@@ -179,7 +202,6 @@ fun BotDashboardScreen(
                             Icon(
                                 imageVector = icon,
                                 contentDescription = title,
-                                tint = if (selectedTab == index) TextDark else TextMuted,
                                 modifier = Modifier.size(22.dp)
                             )
                         },
@@ -187,12 +209,15 @@ fun BotDashboardScreen(
                             Text(
                                 text = title,
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (selectedTab == index) TextDark else TextMuted
+                                fontWeight = FontWeight.SemiBold
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = LightPurpleSecVariant
+                            selectedIconColor = if (darkTheme) Color(0xFFD0BCFF) else BrandPurple,
+                            selectedTextColor = if (darkTheme) Color(0xFFD0BCFF) else BrandPurple,
+                            unselectedIconColor = if (darkTheme) Color.White.copy(alpha = 0.5f) else Color(0xFF79747E),
+                            unselectedTextColor = if (darkTheme) Color.White.copy(alpha = 0.5f) else Color(0xFF79747E),
+                            indicatorColor = if (darkTheme) Color(0xFF4A4458) else LightPurpleSecVariant
                         )
                     )
                 }
@@ -201,6 +226,10 @@ fun BotDashboardScreen(
     }
 }
 
+/**
+ * [StatusBadge] — анимированный бейдж статуса бота в консоли терминала.
+ * При активности бота или в момент подключения точка плавно пульсирует с помощью бесконечной транзакции Compose.
+ */
 @Composable
 fun StatusBadge(status: BotStatus) {
     val (color, text) = when (status) {
@@ -210,7 +239,7 @@ fun StatusBadge(status: BotStatus) {
         BotStatus.ERROR -> Color(0xFFE57373) to "Ошибка"
     }
 
-    // Pulse animation for active or connecting states
+    // Инициализация пульсации прозрачности для визуальной динамики процесса
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val alpha by infiniteTransition.animateFloat(
         initialValue = 0.4f,
@@ -249,6 +278,10 @@ fun StatusBadge(status: BotStatus) {
     }
 }
 
+/**
+ * [ConsoleTab] — первая вкладка ("Бот"), реализующая управление токеном сессии,
+ * быстрый запуск/остановку соединения шлюза и отображение системного терминала с логами.
+ */
 @Composable
 fun ConsoleTab(viewModel: BotViewModel) {
     val token by viewModel.token.collectAsState()
@@ -262,7 +295,7 @@ fun ConsoleTab(viewModel: BotViewModel) {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(AppDimens.extraLargeSpacing)
     ) {
-        // Token Card (Authorization)
+        // Карточка настроек авторизации бота (ввод токена с маскированием)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(AppDimens.highDensityCorner),
@@ -293,7 +326,7 @@ fun ConsoleTab(viewModel: BotViewModel) {
                     trailingIcon = {
                         IconButton(onClick = { isTokenVisible = !isTokenVisible }) {
                             Icon(
-                                imageVector = Icons.Default.Info, 
+                                imageVector = if (isTokenVisible) Icons.Default.Info else Icons.Default.Info, 
                                 contentDescription = "Toggle Visibility",
                                 tint = TextMuted,
                                 modifier = Modifier.size(AppDimens.smallIconSize)
@@ -310,12 +343,12 @@ fun ConsoleTab(viewModel: BotViewModel) {
             }
         }
 
-        // Scripts & Controls 2-column grid
+        // Блок управления "Скрипты и Запуск" в виде строки с двумя интерактивными карточками
         Row(
             modifier = Modifier.fillMaxWidth().height(AppDimens.scriptCardHeight),
             horizontalArrangement = Arrangement.spacedBy(AppDimens.largeSpacing)
         ) {
-            // Left Script Info Card
+            // Левая карточка — сводка по Lua скриптам
             Card(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 shape = RoundedCornerShape(AppDimens.highDensityCorner),
@@ -350,7 +383,7 @@ fun ConsoleTab(viewModel: BotViewModel) {
                 }
             }
 
-            // Right active start/stop trigger button
+            // Правая динамическая кнопка Запуск / Остановка
             val btnBg = when (currentStatus) {
                 BotStatus.STOPPED, BotStatus.ERROR -> BrandPurple
                 BotStatus.CONNECTING -> TerminalOrange
@@ -404,7 +437,7 @@ fun ConsoleTab(viewModel: BotViewModel) {
             }
         }
 
-        // Output Terminal Console Section
+        // Секция черного технического терминала вывода логов
         Card(
             modifier = Modifier
                 .weight(1f)
@@ -415,7 +448,7 @@ fun ConsoleTab(viewModel: BotViewModel) {
             border = AppStyles.terminalBorder()
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Technical terminal header
+                // Строка заголовка терминала с утилитами управления
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -448,7 +481,7 @@ fun ConsoleTab(viewModel: BotViewModel) {
                         )
                     }
 
-                    // Terminal Utilities (copy, clear)
+                    // Кнопки очистки и экспорта логов терминала
                     Row(horizontalArrangement = Arrangement.spacedBy(AppDimens.smallSpacing)) {
                         IconButton(
                             onClick = { viewModel.clearLogs() },
@@ -482,7 +515,7 @@ fun ConsoleTab(viewModel: BotViewModel) {
                     }
                 }
 
-                // Inner scrollable console rows
+                // Свиток логов с автоскроллом к последнему элементу
                 val listState = rememberLazyListState()
 
                 LaunchedEffect(logs.size) {
@@ -533,6 +566,10 @@ fun ConsoleTab(viewModel: BotViewModel) {
     }
 }
 
+/**
+ * [LogLineItem] — компонент отображения одной строки логов в консоли терминала.
+ * Настраивает шрифт Monospace и кастомные цвета на основе [LogLevel].
+ */
 @Composable
 fun LogLineItem(log: LogEntry) {
     val levelColor = when (log.level) {
@@ -548,7 +585,7 @@ fun LogLineItem(log: LogEntry) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
         verticalAlignment = Alignment.Top
     ) {
-        // [Time]
+        // [Время]
         Text(
             text = "[${log.timestamp}]",
             style = TextStyle(
@@ -560,7 +597,7 @@ fun LogLineItem(log: LogEntry) {
             modifier = Modifier.padding(end = 6.dp)
         )
 
-        // [LEVEL/TAG]
+        // [УРОВЕНЬ/ТЕГ]
         Text(
             text = "${log.level.name}:",
             style = TextStyle(
@@ -572,7 +609,7 @@ fun LogLineItem(log: LogEntry) {
             modifier = Modifier.padding(end = 6.dp)
         )
 
-        // Log message
+        // Текст сообщения
         Text(
             text = log.message,
             style = TextStyle(
@@ -585,6 +622,11 @@ fun LogLineItem(log: LogEntry) {
     }
 }
 
+/**
+ * [CommandsTab] — вторая вкладка управления ("Команды"), выводящая список всех
+ * загруженных скриптов. Позволяет создавать новые скрипты по шаблонам, редактировать существующие
+ * и отправлять Bulk Overwrite для моментальной горячей синхронизации без перезапуска.
+ */
 @Composable
 fun CommandsTab(viewModel: BotViewModel) {
     val commands by viewModel.commandsList.collectAsState()
@@ -612,7 +654,7 @@ fun CommandsTab(viewModel: BotViewModel) {
                 )
             }
             
-            // Add Command button
+            // Кнопка быстрого создания новой шелл-команды Lua
             IconButton(
                 onClick = { viewModel.openCommandEditor(null) }
             ) {
@@ -626,7 +668,7 @@ fun CommandsTab(viewModel: BotViewModel) {
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Hot Sync Banner if Bot is Active
+        // Баннер Горячей синхронизации (виден, когда бот активен и запущен)
         AnimatedVisibility(visible = currentStatus == BotStatus.RUNNING) {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -666,7 +708,7 @@ fun CommandsTab(viewModel: BotViewModel) {
             }
         }
 
-        // List files scrollable
+        // Прогрузка списка Lua команд, если он пуст — вывод анимации заглушки
         if (commands.isEmpty()) {
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -709,7 +751,7 @@ fun CommandsTab(viewModel: BotViewModel) {
             }
         }
 
-        // Action info at the bottom of directory
+        // Информационная плашка с точным путем расположения Lua скриптов во внутреннем хранилище устройства
         Card(
             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
@@ -740,7 +782,7 @@ fun CommandsTab(viewModel: BotViewModel) {
         }
     }
 
-    // In-app Fullscreen Lua Editor Dialog overlay
+    // Overlay встроенного полноэкранного редактора с проверкой синтаксиса
     if (isEditorOpen) {
         LuaEditorDialog(
             command = selectedCommand,
@@ -750,6 +792,10 @@ fun CommandsTab(viewModel: BotViewModel) {
     }
 }
 
+/**
+ * [CommandItemCard] — интерактивная M3 карточка с описанием, именем
+ * и параметрами конкретной Lua слэш-команды. Содержит кнопки редактирования и анимации удаления.
+ */
 @Composable
 fun CommandItemCard(
     command: LuaCommand,
@@ -811,7 +857,7 @@ fun CommandItemCard(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
             )
 
-            // Options summary if present
+            // Сводный список аргументов (options), если они определены в Lua скрипте
             if (command.optionsArray.length() > 0) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
@@ -842,6 +888,7 @@ fun CommandItemCard(
         }
     }
 
+    // Софт-диалог для подтверждения удаления файла
     if (showConfirmDelete) {
         AlertDialog(
             onDismissRequest = { showConfirmDelete = false },
@@ -866,6 +913,11 @@ fun CommandItemCard(
     }
 }
 
+/**
+ * [LuaEditorDialog] — встроенной графический IDE-редактор Lua скриптов.
+ * Позволяет писать код, проверять синтаксис Lua на компилируемость виртуальной машиной Luaj
+ * и создавать структуру аргументов Slash-команд по шаблонам прямо на телефоне.
+ */
 @Composable
 fun LuaEditorDialog(
     command: LuaCommand?,
@@ -886,7 +938,7 @@ fun LuaEditorDialog(
             color = MaterialTheme.colorScheme.background
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Editor TopBar
+                // TopBar ИНТЕРФЕЙСА РЕДАКТОРА
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -938,7 +990,7 @@ fun LuaEditorDialog(
                         .fillMaxWidth()
                         .padding(16.dp)
                 ) {
-                    // File name inputs
+                    // Текстовое поле ввода имени команды
                     OutlinedTextField(
                         value = fileName,
                         onValueChange = { fileName = it },
@@ -960,7 +1012,7 @@ fun LuaEditorDialog(
                         )
                     }
 
-                    // Helper macros Row
+                    // Панель быстрого макро-заполнения (быстрая вставка шаблонов)
                     Text(
                         text = "Вставить код:",
                         style = MaterialTheme.typography.labelMedium,
@@ -1015,13 +1067,13 @@ end
 
                         Button(
                             onClick = {
-                                // Simple syntax validation with luaj compiles compilation
+                                // Валидация синтаксиса Lua прямо на лету с компиляцией в рантайме Luaj
                                 try {
                                     val globals = org.luaj.vm2.lib.jse.JsePlatform.standardGlobals()
                                     globals.load(codeText)
                                     hasErrorMsg = "✅ Синтаксис Lua корректен!"
                                 } catch (e: Exception) {
-                                    hasErrorMsg = "❌ Ошибка компиляции Lua: ${e.localizedMessage}"
+                                    hasErrorMsg = "❌ Ошибка компиляции: ${e.localizedMessage}"
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -1042,7 +1094,7 @@ end
                     )
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Text Field for Mono Code
+                    // Основная печатная область написания Lua кода с поддержкой Monospace шрифта
                     OutlinedTextField(
                         value = codeText,
                         onValueChange = { codeText = it },
@@ -1067,6 +1119,11 @@ end
     }
 }
 
+/**
+ * [GuideTab] — вкладка справочных материалов ("Справка").
+ * Оформлена в виде вертикального списка (LazyColumn) картонных руководств, обучающая
+ * правильному созданию, переносу скриптов и пониманию спецификации Discord Slash Commands API.
+ */
 @Composable
 fun GuideTab() {
     LazyColumn(
