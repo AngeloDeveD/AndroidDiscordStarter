@@ -1,0 +1,6 @@
+{
+  "name": "Discord Bot Launcher",
+  "description": "An Android application that allows you to start and run a Discord bot with a single click, featuring authorization via token, a real-time log terminal, and dynamic Lua-scripted slash commands.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
