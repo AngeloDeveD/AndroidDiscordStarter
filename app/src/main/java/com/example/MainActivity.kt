@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.*
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,11 +71,16 @@ fun BotDashboardScreen(
     Column(
         modifier = modifier.background(MaterialTheme.colorScheme.background)
     ) {
-        // High Density Header Section (px-4 pt-6 pb-2)
+        // High Density Header Section using AppDimens tokens
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
+                .padding(
+                    start = AppDimens.screenPadding,
+                    end = AppDimens.screenPadding,
+                    top = AppDimens.headerTopPadding,
+                    bottom = AppDimens.headerBottomPadding
+                ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -90,17 +95,17 @@ fun BotDashboardScreen(
                 // Inline status indicator with pulsing shadow-like appearance
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(AppDimens.smallSpacing + 2.dp),
                     modifier = Modifier.padding(top = 2.dp)
                 ) {
                     val statusDotColor = when (currentStatus) {
-                        BotStatus.RUNNING -> Color(0xFF4CAF50)
-                        BotStatus.CONNECTING -> Color(0xFFFFA726)
-                        else -> Color(0xFFEF5350)
+                        BotStatus.RUNNING -> TerminalGreen
+                        BotStatus.CONNECTING -> TerminalOrange
+                        else -> TerminalRed
                     }
                     Box(
                         modifier = Modifier
-                            .size(8.dp)
+                            .size(AppDimens.statusDotSize)
                             .background(statusDotColor, CircleShape)
                     )
                     val statusLabel = when (currentStatus) {
@@ -121,26 +126,26 @@ fun BotDashboardScreen(
             IconButton(
                 onClick = { selectedTab = 2 },
                 modifier = Modifier
-                    .size(44.dp)
-                    .background(Color(0xFFEADDFF), CircleShape)
+                    .size(AppDimens.circleButtonSize)
+                    .background(LightPurpleVariant, CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
-                    tint = Color(0xFF21005D),
-                    modifier = Modifier.size(20.dp)
+                    tint = DarkPurple,
+                    modifier = Modifier.size(AppDimens.normalIconSize)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(AppDimens.mediumSpacing))
 
         // Main Tab Content Area
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = AppDimens.screenPadding)
         ) {
             when (selectedTab) {
                 0 -> ConsoleTab(viewModel = viewModel)
@@ -149,16 +154,16 @@ fun BotDashboardScreen(
             }
         }
 
-        // High Density Bottom Navigation Bar (h-20 bg-[#F3EDF7] border-t border-[#CAC4D0]/50)
+        // High Density Bottom Navigation Bar
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
+            shape = RoundedCornerShape(topStart = AppDimens.highDensityCorner, topEnd = AppDimens.highDensityCorner),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
             NavigationBar(
                 containerColor = Color.Transparent,
-                modifier = Modifier.height(72.dp),
+                modifier = Modifier.height(AppDimens.bottomBarHeight),
                 windowInsets = WindowInsets(0, 0, 0, 0)
             ) {
                 val items = listOf(
@@ -174,7 +179,7 @@ fun BotDashboardScreen(
                             Icon(
                                 imageVector = icon,
                                 contentDescription = title,
-                                tint = if (selectedTab == index) Color(0xFF1D192B) else Color(0xFF49454F),
+                                tint = if (selectedTab == index) TextDark else TextMuted,
                                 modifier = Modifier.size(22.dp)
                             )
                         },
@@ -183,11 +188,11 @@ fun BotDashboardScreen(
                                 text = title,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
-                                color = if (selectedTab == index) Color(0xFF1D192B) else Color(0xFF49454F)
+                                color = if (selectedTab == index) TextDark else TextMuted
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = Color(0xFFE8DEF8)
+                            indicatorColor = LightPurpleSecVariant
                         )
                     )
                 }
@@ -255,22 +260,22 @@ fun ConsoleTab(viewModel: BotViewModel) {
 
     Column(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(AppDimens.extraLargeSpacing)
     ) {
         // Token Card (Authorization)
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F2FA)),
-            border = BorderStroke(1.dp, Color(0xFFCAC4D0).copy(alpha = 0.3f))
+            shape = RoundedCornerShape(AppDimens.highDensityCorner),
+            colors = AppStyles.standardCardColors(),
+            border = AppStyles.standardBorder()
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
+            Column(modifier = Modifier.padding(AppDimens.cardPadding)) {
                 Text(
                     text = "АВТОРИЗАЦИЯ",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF6750A4),
-                    modifier = Modifier.padding(bottom = 6.dp)
+                    color = BrandPurple,
+                    modifier = Modifier.padding(bottom = AppDimens.mediumSpacing - 2.dp)
                 )
                 
                 OutlinedTextField(
@@ -281,8 +286,8 @@ fun ConsoleTab(viewModel: BotViewModel) {
                         Icon(
                             imageVector = Icons.Default.Lock, 
                             contentDescription = "Token Lock", 
-                            tint = Color(0xFF49454F),
-                            modifier = Modifier.size(18.dp)
+                            tint = TextMuted,
+                            modifier = Modifier.size(AppDimens.smallIconSize)
                         ) 
                     },
                     trailingIcon = {
@@ -290,8 +295,8 @@ fun ConsoleTab(viewModel: BotViewModel) {
                             Icon(
                                 imageVector = Icons.Default.Info, 
                                 contentDescription = "Toggle Visibility",
-                                tint = Color(0xFF49454F),
-                                modifier = Modifier.size(18.dp)
+                                tint = TextMuted,
+                                modifier = Modifier.size(AppDimens.smallIconSize)
                             )
                         }
                     },
@@ -299,50 +304,47 @@ fun ConsoleTab(viewModel: BotViewModel) {
                     singleLine = true,
                     enabled = currentStatus == BotStatus.STOPPED || currentStatus == BotStatus.ERROR,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF79747E),
-                        unfocusedBorderColor = Color(0xFF79747E).copy(alpha = 0.4f)
-                    )
+                    shape = RoundedCornerShape(AppDimens.mediumCorner),
+                    colors = AppStyles.textFieldColors()
                 )
             }
         }
 
         // Scripts & Controls 2-column grid
         Row(
-            modifier = Modifier.fillMaxWidth().height(92.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.fillMaxWidth().height(AppDimens.scriptCardHeight),
+            horizontalArrangement = Arrangement.spacedBy(AppDimens.largeSpacing)
         ) {
             // Left Script Info Card
             Card(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8DEF8))
+                shape = RoundedCornerShape(AppDimens.highDensityCorner),
+                colors = CardDefaults.cardColors(containerColor = LightPurpleSecVariant)
             ) {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(14.dp),
+                    modifier = Modifier.fillMaxSize().padding(AppDimens.cardPadding),
                     verticalArrangement = Arrangement.SpaceBetween,
                     horizontalAlignment = Alignment.Start
                 ) {
                     Icon(
                         imageVector = Icons.Default.List,
                         contentDescription = "Lua Scripts",
-                        tint = Color(0xFF21005D),
-                        modifier = Modifier.size(22.dp)
+                        tint = DarkPurple,
+                        modifier = Modifier.size(AppDimens.normalIconSize + 2.dp)
                     )
                     Column {
                         Text(
                             text = "Lua Скрипты",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF21005D),
-                            fontSize = 13.sp
+                            color = DarkPurple,
+                            fontSize = AppDimens.titleFontSize
                         )
                         Text(
                             text = "${commands.size} команд обнаружено",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF49454F),
-                            fontSize = 10.sp
+                            color = TextMuted,
+                            fontSize = AppDimens.smallLabelFontSize
                         )
                     }
                 }
@@ -350,9 +352,9 @@ fun ConsoleTab(viewModel: BotViewModel) {
 
             // Right active start/stop trigger button
             val btnBg = when (currentStatus) {
-                BotStatus.STOPPED, BotStatus.ERROR -> Color(0xFF6750A4)
-                BotStatus.CONNECTING -> Color(0xFFEF6C00)
-                BotStatus.RUNNING -> Color(0xFFC62828)
+                BotStatus.STOPPED, BotStatus.ERROR -> BrandPurple
+                BotStatus.CONNECTING -> TerminalOrange
+                BotStatus.RUNNING -> TerminalRed
             }
             val btnText = when (currentStatus) {
                 BotStatus.STOPPED, BotStatus.ERROR -> "Запустить"
@@ -374,9 +376,9 @@ fun ConsoleTab(viewModel: BotViewModel) {
                     }
                 },
                 modifier = Modifier.weight(1f).fillMaxHeight(),
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(AppDimens.highDensityCorner),
                 colors = ButtonDefaults.buttonColors(containerColor = btnBg),
-                contentPadding = PaddingValues(12.dp)
+                contentPadding = PaddingValues(AppDimens.largeSpacing)
             ) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
@@ -387,16 +389,16 @@ fun ConsoleTab(viewModel: BotViewModel) {
                         imageVector = btnIcon,
                         contentDescription = btnText,
                         tint = Color.White,
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(AppDimens.largeIconSize)
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(AppDimens.smallSpacing))
                     Text(
                         text = btnText.uppercase(),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp,
+                        letterSpacing = AppDimens.letterSpacingWide,
                         color = Color.White,
-                        fontSize = 10.sp
+                        fontSize = AppDimens.smallLabelFontSize
                     )
                 }
             }
@@ -407,42 +409,47 @@ fun ConsoleTab(viewModel: BotViewModel) {
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(bottom = 8.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1B1F)),
-            border = BorderStroke(1.dp, Color(0xFF49454F))
+                .padding(bottom = AppDimens.mediumSpacing),
+            shape = RoundedCornerShape(AppDimens.highDensityCorner),
+            colors = AppStyles.terminalCardColors(),
+            border = AppStyles.terminalBorder()
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Technical terminal header
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 4.dp),
+                        .padding(
+                            start = AppDimens.extraLargeSpacing,
+                            end = AppDimens.extraLargeSpacing,
+                            top = AppDimens.largeSpacing,
+                            bottom = AppDimens.smallSpacing
+                        ),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(AppDimens.smallSpacing + 2.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Info,
                             contentDescription = "Console",
-                            tint = Color(0xFF938F99),
+                            tint = TerminalGrey,
                             modifier = Modifier.size(14.dp)
                         )
                         Text(
                             text = "КОНСОЛЬ ВЫВОДА",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFD0BCFF),
-                            letterSpacing = 1.5.sp,
-                            fontSize = 10.sp
+                            color = TerminalBlue,
+                            letterSpacing = AppDimens.letterSpacingHigh,
+                            fontSize = AppDimens.smallLabelFontSize
                         )
                     }
 
                     // Terminal Utilities (copy, clear)
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(AppDimens.smallSpacing)) {
                         IconButton(
                             onClick = { viewModel.clearLogs() },
                             modifier = Modifier.size(24.dp)
@@ -450,11 +457,11 @@ fun ConsoleTab(viewModel: BotViewModel) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
                                 contentDescription = "Clear logs",
-                                tint = Color(0xFF938F99),
+                                tint = TerminalGrey,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(AppDimens.smallSpacing))
                         IconButton(
                             onClick = {
                                 val fullLog = logs.joinToString("\n") { "[${it.timestamp}] [${it.level.name}] [${it.tag}] ${it.message}" }
@@ -468,7 +475,7 @@ fun ConsoleTab(viewModel: BotViewModel) {
                             Icon(
                                 imageVector = Icons.Default.Share,
                                 contentDescription = "Copy logs",
-                                tint = Color(0xFF938F99),
+                                tint = TerminalGrey,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -499,21 +506,21 @@ fun ConsoleTab(viewModel: BotViewModel) {
                             Icon(
                                 imageVector = Icons.Default.Info,
                                 contentDescription = "No logs",
-                                tint = Color(0xFF49454F),
+                                tint = TextMuted,
                                 modifier = Modifier.size(28.dp)
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(AppDimens.smallSpacing + 2.dp))
                             Text(
                                 text = "Ожидание нажатия кнопки запуска...",
-                                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp),
-                                color = Color(0xFF938F99)
+                                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = AppDimens.terminalFontSize),
+                                color = TerminalGrey
                             )
                         }
                     } else {
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(AppDimens.smallSpacing)
                         ) {
                             items(logs, key = { it.id }) { log ->
                                 LogLineItem(log)
@@ -529,12 +536,12 @@ fun ConsoleTab(viewModel: BotViewModel) {
 @Composable
 fun LogLineItem(log: LogEntry) {
     val levelColor = when (log.level) {
-        LogLevel.INFO -> Color(0xFFD0BCFF)
-        LogLevel.WARNING -> Color(0xFFFFB4AB)
-        LogLevel.ERROR -> Color(0xFFEF5350)
-        LogLevel.DEBUG -> Color(0xFF938F99)
-        LogLevel.SUCCESS -> Color(0xFFD0BCFF)
-        LogLevel.BOT -> Color(0xFFEADDFF)
+        LogLevel.INFO -> TerminalBlue
+        LogLevel.WARNING -> TerminalWarn
+        LogLevel.ERROR -> TerminalRed
+        LogLevel.DEBUG -> TerminalGrey
+        LogLevel.SUCCESS -> TerminalBlue
+        LogLevel.BOT -> LightPurpleVariant
     }
 
     Row(
@@ -546,10 +553,10 @@ fun LogLineItem(log: LogEntry) {
             text = "[${log.timestamp}]",
             style = TextStyle(
                 fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
+                fontSize = AppDimens.terminalFontSize,
                 fontWeight = FontWeight.Normal
             ),
-            color = Color(0xFF938F99),
+            color = TerminalGrey,
             modifier = Modifier.padding(end = 6.dp)
         )
 
@@ -558,7 +565,7 @@ fun LogLineItem(log: LogEntry) {
             text = "${log.level.name}:",
             style = TextStyle(
                 fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
+                fontSize = AppDimens.terminalFontSize,
                 fontWeight = FontWeight.Bold
             ),
             color = levelColor,
@@ -570,7 +577,7 @@ fun LogLineItem(log: LogEntry) {
             text = log.message,
             style = TextStyle(
                 fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
+                fontSize = AppDimens.terminalFontSize,
                 lineHeight = 14.sp
             ),
             color = Color.White

@@ -19,26 +19,26 @@ private val DarkColorScheme =
     onPrimaryContainer = Color(0xFFEADDFF),
     secondary = Color(0xFFCCC2DC),
     secondaryContainer = Color(0xFF4A4458),
-    background = Color(0xFF1C1B1F),
+    background = TerminalBackground,
     surface = Color(0xFF25232A),
     onBackground = Color(0xFFE6E1E5),
     onSurface = Color(0xFFE6E1E5),
-    outline = Color(0xFF938F99)
+    outline = TerminalGrey
   )
 
 private val LightColorScheme =
   lightColorScheme(
-    primary = Color(0xFF6750A4),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFEADDFF),
-    onPrimaryContainer = Color(0xFF21005D),
+    primary = BrandPurple,
+    onPrimary = Color.White,
+    primaryContainer = LightPurpleVariant,
+    onPrimaryContainer = DarkPurple,
     secondary = Color(0xFF625B71),
-    secondaryContainer = Color(0xFFE8DEF8),
-    background = Color(0xFFFEF7FF),
-    surface = Color(0xFFF7F2FA),
-    onBackground = Color(0xFF1D1B20),
-    onSurface = Color(0xFF1D1B20),
-    outline = Color(0xFFCAC4D0),
+    secondaryContainer = LightPurpleSecVariant,
+    background = BackgroundPurple,
+    surface = CardSurfacePurple,
+    onBackground = TextDark,
+    onSurface = TextDark,
+    outline = DividerPurple,
     surfaceVariant = Color(0xFFF3EDF7)
   )
 
@@ -60,6 +60,11 @@ fun MyApplicationTheme(
       else -> LightColorScheme
     }
 
-  MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+  MaterialTheme(
+    colorScheme = colorScheme,
+    typography = Typography,
+    shapes = HighDensityShapes,
+    content = content
+  )
 }
 
